@@ -11,7 +11,7 @@ require (
 	github.com/cloudwego/eino-ext/callbacks/cozeloop v0.2.2
 	github.com/cloudwego/eino-ext/components/document/parser/html v0.0.0-20251117090452-bd6375a0b3cf
 	github.com/cloudwego/eino-ext/components/document/parser/pdf v0.0.0-20251117090452-bd6375a0b3cf
-	github.com/cloudwego/eino-ext/components/model/ark v0.1.67
+	github.com/cloudwego/eino-ext/components/model/ark v0.1.68
 	github.com/cloudwego/eino-ext/components/model/deepseek v0.1.5
 	github.com/cloudwego/eino-ext/components/model/ollama v0.1.9
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
@@ -29,7 +29,7 @@ require (
 	github.com/kaptinlin/jsonrepair v0.2.4
 	github.com/modelcontextprotocol/go-sdk v1.0.0
 	github.com/redis/go-redis/v9 v9.17.2
-	github.com/volcengine/volcengine-go-sdk v1.2.9
+	github.com/volcengine/volcengine-go-sdk v1.2.27
 	github.com/wk8/go-ordered-map/v2 v2.1.8
 	github.com/xuri/excelize/v2 v2.10.0
 	golang.org/x/sync v0.17.0
