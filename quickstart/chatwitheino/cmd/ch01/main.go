@@ -25,10 +25,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/cloudwego/eino-ext/components/model/ark"
-	"github.com/cloudwego/eino-ext/components/model/openai"
-	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+
+	examplemodel "github.com/cloudwego/eino-examples/adk/common/model"
 )
 
 func main() {
@@ -43,11 +42,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	cm, err := newChatModel(ctx)
-	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	cm := examplemodel.NewChatModel()
 
 	messages := []*schema.Message{
 		schema.SystemMessage(instruction),
@@ -76,20 +71,4 @@ func main() {
 		}
 	}
 	_, _ = fmt.Fprintln(os.Stdout)
-}
-
-func newChatModel(ctx context.Context) (model.ToolCallingChatModel, error) {
-	if os.Getenv("MODEL_TYPE") == "ark" {
-		return ark.NewChatModel(ctx, &ark.ChatModelConfig{
-			APIKey:  os.Getenv("ARK_API_KEY"),
-			Model:   os.Getenv("ARK_MODEL"),
-			BaseURL: os.Getenv("ARK_BASE_URL"),
-		})
-	}
-	return openai.NewChatModel(ctx, &openai.ChatModelConfig{
-		APIKey:  os.Getenv("OPENAI_API_KEY"),
-		Model:   os.Getenv("OPENAI_MODEL"),
-		BaseURL: os.Getenv("OPENAI_BASE_URL"),
-		ByAzure: os.Getenv("OPENAI_BY_AZURE") == "true",
-	})
 }

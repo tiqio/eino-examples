@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino-ext/components/model/ark"
-	"github.com/cloudwego/eino-ext/components/model/openai"
+	"github.com/cloudwego/eino-ext/components/model/openairesponse"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	cbutils "github.com/cloudwego/eino/utils/callbacks"
@@ -52,17 +52,13 @@ func NewChatModel() model.ToolCallingChatModel {
 		return cm
 	}
 
-	// Create OpenAI ChatModel (default)
-	cm, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
+	cm, err := openairesponse.NewResponsesAPIChatModel(context.Background(), &openairesponse.ResponsesAPIConfig{
 		APIKey:  os.Getenv("OPENAI_API_KEY"),
 		Model:   os.Getenv("OPENAI_MODEL"),
-		BaseURL: os.Getenv("OPENAI_BASE_URL"),
-		ByAzure: func() bool {
-			return os.Getenv("OPENAI_BY_AZURE") == "true"
-		}(),
+		BaseURL: os.Getenv("OPENAI_RESPONSES_URL"),
 	})
 	if err != nil {
-		log.Fatalf("openai.NewChatModel failed: %v", err)
+		log.Fatalf("openairesponse.NewResponsesAPIChatModel failed: %v", err)
 	}
 	return cm
 }
