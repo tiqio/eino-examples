@@ -43,12 +43,14 @@ import (
 
 // Config holds all dependencies for the HTTP server.
 type Config struct {
-	Runner       *adk.Runner
-	Store        *mem.Store
-	WorkspaceDir string
-	ProjectRoot  string // root of the codebase the agent can explore
-	ExamplesDir  string // root of the eino-examples repo (for example searches)
-	Port         string
+	Runner        *adk.Runner
+	AgenticRunner *adk.TypedRunner[*schema.AgenticMessage]
+	UseAgentic    bool
+	Store         *mem.Store
+	WorkspaceDir  string
+	ProjectRoot   string // root of the codebase the agent can explore
+	ExamplesDir   string // root of the eino-examples repo (for example searches)
+	Port          string
 }
 
 // Server wraps a Hertz HTTP server with the chat-with-doc routes.
@@ -177,8 +179,6 @@ func (s *Server) handleChat(ctx context.Context, c *app.RequestContext) {
 	log.Printf("[chat] session=%s running agent with %d messages (%d history + %d context)",
 		id, len(runMessages), len(history), len(runMessages)-len(history))
 
-	iter := s.cfg.Runner.Run(ctx, runMessages, adk.WithCheckPointID(id))
-
 	stream := sse.NewStream(c)
 	defer func() { _ = c.Flush() }()
 
@@ -199,7 +199,20 @@ func (s *Server) handleChat(ctx context.Context, c *app.RequestContext) {
 		}
 	}()
 
-	lastContent, interruptID, finalMsgIdx, streamErr := a2ui.StreamToWriter(&sseLineWriter{stream: stream}, id, history, iter)
+	var (
+		lastContent string
+		interruptID string
+		finalMsgIdx int
+		streamErr   error
+	)
+	if s.cfg.UseAgentic {
+		runAgentic := toAgenticRunMessages(runMessages)
+		iter := s.cfg.AgenticRunner.Run(ctx, runAgentic, adk.WithCheckPointID(id))
+		lastContent, interruptID, finalMsgIdx, streamErr = a2ui.StreamToWriterAgentic(&sseLineWriter{stream: stream}, id, history, iter)
+	} else {
+		iter := s.cfg.Runner.Run(ctx, runMessages, adk.WithCheckPointID(id))
+		lastContent, interruptID, finalMsgIdx, streamErr = a2ui.StreamToWriter(&sseLineWriter{stream: stream}, id, history, iter)
+	}
 	close(kaStop)
 	if streamErr != nil {
 		log.Printf("[chat] session=%s stream error: %v", id, streamErr)
@@ -354,9 +367,19 @@ func (s *Server) handleApprove(ctx context.Context, c *app.RequestContext) {
 	}
 	result := &tool.ApprovalResult{Approved: req.Approved, DisapproveReason: reason}
 
-	iter, err := s.cfg.Runner.ResumeWithParams(ctx, id, &adk.ResumeParams{
-		Targets: map[string]any{interruptID: result},
-	})
+	var (
+		iter        *adk.AsyncIterator[*adk.AgentEvent]
+		agenticIter *adk.AsyncIterator[*adk.TypedAgentEvent[*schema.AgenticMessage]]
+	)
+	if s.cfg.UseAgentic {
+		agenticIter, err = s.cfg.AgenticRunner.ResumeWithParams(ctx, id, &adk.ResumeParams{
+			Targets: map[string]any{interruptID: result},
+		})
+	} else {
+		iter, err = s.cfg.Runner.ResumeWithParams(ctx, id, &adk.ResumeParams{
+			Targets: map[string]any{interruptID: result},
+		})
+	}
 	if err != nil {
 		c.JSON(consts.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -384,7 +407,17 @@ func (s *Server) handleApprove(ctx context.Context, c *app.RequestContext) {
 		}
 	}()
 
-	lastContent, newInterruptID, finalMsgIdx, streamErr := a2ui.StreamContinue(&sseLineWriter{stream: stream}, id, sess.GetMsgIdx(), iter)
+	var (
+		lastContent    string
+		newInterruptID string
+		finalMsgIdx    int
+		streamErr      error
+	)
+	if s.cfg.UseAgentic {
+		lastContent, newInterruptID, finalMsgIdx, streamErr = a2ui.StreamContinueAgentic(&sseLineWriter{stream: stream}, id, sess.GetMsgIdx(), agenticIter)
+	} else {
+		lastContent, newInterruptID, finalMsgIdx, streamErr = a2ui.StreamContinue(&sseLineWriter{stream: stream}, id, sess.GetMsgIdx(), iter)
+	}
 	close(kaStop)
 	if streamErr != nil {
 		log.Printf("[approve] session=%s stream error: %v", id, streamErr)
@@ -401,6 +434,62 @@ func (s *Server) handleApprove(ctx context.Context, c *app.RequestContext) {
 		if appendErr := sess.Append(assistantMsg); appendErr != nil {
 			log.Printf("warn: failed to persist assistant message: %v", appendErr)
 		}
+	}
+}
+
+func toAgenticRunMessages(messages []*schema.Message) []*schema.AgenticMessage {
+	out := make([]*schema.AgenticMessage, 0, len(messages))
+	for _, m := range messages {
+		if m == nil {
+			continue
+		}
+		out = append(out, messageToAgenticForRun(m))
+	}
+	return out
+}
+
+func messageToAgenticForRun(msg *schema.Message) *schema.AgenticMessage {
+	if msg == nil {
+		return nil
+	}
+	am := &schema.AgenticMessage{Role: roleToAgenticRoleForRun(msg.Role)}
+	if msg.Content != "" {
+		if am.Role == schema.AgenticRoleTypeAssistant {
+			am.ContentBlocks = append(am.ContentBlocks, schema.NewContentBlock(&schema.AssistantGenText{Text: msg.Content}))
+		} else {
+			am.ContentBlocks = append(am.ContentBlocks, schema.NewContentBlock(&schema.UserInputText{Text: msg.Content}))
+		}
+	}
+	for _, tc := range msg.ToolCalls {
+		am.Role = schema.AgenticRoleTypeAssistant
+		am.ContentBlocks = append(am.ContentBlocks, schema.NewContentBlock(&schema.FunctionToolCall{
+			CallID:    tc.ID,
+			Name:      tc.Function.Name,
+			Arguments: tc.Function.Arguments,
+		}))
+	}
+	if msg.Role == schema.Tool {
+		am.Role = schema.AgenticRoleTypeUser
+		am.ContentBlocks = []*schema.ContentBlock{schema.NewContentBlock(&schema.FunctionToolResult{
+			CallID: msg.ToolCallID,
+			Name:   "tool_result",
+			Content: []*schema.FunctionToolResultContentBlock{{
+				Type: schema.FunctionToolResultContentBlockTypeText,
+				Text: &schema.UserInputText{Text: msg.Content},
+			}},
+		})}
+	}
+	return am
+}
+
+func roleToAgenticRoleForRun(role schema.RoleType) schema.AgenticRoleType {
+	switch role {
+	case schema.Assistant:
+		return schema.AgenticRoleTypeAssistant
+	case schema.System:
+		return schema.AgenticRoleTypeSystem
+	default:
+		return schema.AgenticRoleTypeUser
 	}
 }
 

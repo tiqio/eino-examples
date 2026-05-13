@@ -21,11 +21,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	clc "github.com/cloudwego/eino-ext/callbacks/cozeloop"
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/schema"
 	"github.com/coze-dev/cozeloop-go"
 
 	adkstore "github.com/cloudwego/eino-examples/adk/common/store"
@@ -56,16 +58,33 @@ func main() {
 		callbacks.AppendGlobalHandlers(clc.NewLoopHandler(client))
 	}
 
-	agent, err := buildAgent(ctx)
-	if err != nil {
-		log.Fatalf("failed to build agent: %v", err)
-	}
+	useAgenticMode := strings.EqualFold(os.Getenv("USE_AGENTIC_MODE"), "true")
+	var runner *adk.Runner
+	var agenticRunner *adk.TypedRunner[*schema.AgenticMessage]
+	if useAgenticMode {
+		agent, err := buildAgenticAgent(ctx)
+		if err != nil {
+			log.Fatalf("failed to build agentic agent: %v", err)
+		}
+		agenticRunner = adk.NewTypedRunner[*schema.AgenticMessage](adk.TypedRunnerConfig[*schema.AgenticMessage]{
+			Agent:           agent,
+			EnableStreaming: true,
+			CheckPointStore: adkstore.NewInMemoryStore(),
+		})
+		log.Printf("running in AgenticMessage mode")
+	} else {
+		agent, err := buildAgent(ctx)
+		if err != nil {
+			log.Fatalf("failed to build agent: %v", err)
+		}
 
-	runner := adk.NewRunner(ctx, adk.RunnerConfig{
-		Agent:           agent,
-		EnableStreaming: true,
-		CheckPointStore: adkstore.NewInMemoryStore(),
-	})
+		runner = adk.NewRunner(ctx, adk.RunnerConfig{
+			Agent:           agent,
+			EnableStreaming: true,
+			CheckPointStore: adkstore.NewInMemoryStore(),
+		})
+		log.Printf("running in Message mode")
+	}
 
 	sessionDir := os.Getenv("SESSION_DIR")
 	if sessionDir == "" {
@@ -117,12 +136,14 @@ func main() {
 	log.Printf("examples dir: %s", examplesDir)
 
 	srv := server.New(server.Config{
-		Runner:       runner,
-		Store:        store,
-		WorkspaceDir: workspaceDir,
-		ProjectRoot:  projectRoot,
-		ExamplesDir:  examplesDir,
-		Port:         port,
+		Runner:        runner,
+		AgenticRunner: agenticRunner,
+		UseAgentic:    useAgenticMode,
+		Store:         store,
+		WorkspaceDir:  workspaceDir,
+		ProjectRoot:   projectRoot,
+		ExamplesDir:   examplesDir,
+		Port:          port,
 	})
 
 	log.Printf("starting server on http://localhost:%s", port)

@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	localbk "github.com/cloudwego/eino-ext/adk/backend/local"
@@ -91,7 +92,49 @@ func buildAgent(ctx context.Context) (adk.Agent, error) {
 					strings.Contains(err.Error(), "qpm limit")
 			},
 		},
+		TurnController: newDeepTurnController(readTurnMaxTurns()),
 	})
+}
+
+func readTurnMaxTurns() int {
+	v := strings.TrimSpace(os.Getenv("SUPERVISOR_MAX_TURNS"))
+	if v == "" {
+		return 100
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return 100
+	}
+	return n
+}
+
+func newDeepTurnController(maxTurns int) *deep.TurnController {
+	if maxTurns <= 0 {
+		maxTurns = 100
+	}
+	return &deep.TurnController{
+		MaxTurns: maxTurns,
+		Decide: func(_ context.Context, result deep.TurnResult) deep.TurnDecision {
+			if result.Interrupted || result.HasError {
+				return deep.TurnDecision{Continue: false}
+			}
+			if hasSummary(result.LastContent, result.Accumulated) {
+				return deep.TurnDecision{Continue: false}
+			}
+			return deep.TurnDecision{Continue: true, NextPrompt: defaultFollowup}
+		},
+	}
+}
+
+const defaultFollowup = "Continue unfinished steps. Do not stop at stage summary. Only output a final summary after all requested steps are done."
+
+func hasSummary(last, acc string) bool {
+	text := acc
+	if text == "" {
+		text = last
+	}
+	lower := strings.ToLower(text)
+	return strings.Contains(text, "总总结") || strings.Contains(text, "最终总结") || strings.Contains(text, "总结") || strings.Contains(lower, "final summary") || strings.Contains(lower, "overall summary")
 }
 
 func resolveSkillsDir() (string, bool) {

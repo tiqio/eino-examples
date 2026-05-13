@@ -28,6 +28,7 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/openairesponse"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
 	cbutils "github.com/cloudwego/eino/utils/callbacks"
 	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
@@ -59,6 +60,23 @@ func NewChatModel() model.ToolCallingChatModel {
 	})
 	if err != nil {
 		log.Fatalf("openairesponse.NewResponsesAPIChatModel failed: %v", err)
+	}
+	return cm
+}
+
+func NewAgenticModel() model.BaseModel[*schema.AgenticMessage] {
+	modelType := strings.ToLower(os.Getenv("MODEL_TYPE"))
+	if modelType == "ark" {
+		log.Fatalf("ark model does not support AgenticMessage mode in this example")
+	}
+
+	cm, err := openairesponse.NewResponsesAPIModel[*schema.AgenticMessage](context.Background(), &openairesponse.ResponsesAPIConfig{
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		Model:   os.Getenv("OPENAI_MODEL"),
+		BaseURL: os.Getenv("OPENAI_RESPONSES_URL"),
+	})
+	if err != nil {
+		log.Fatalf("openairesponse.NewResponsesAPIModel[*schema.AgenticMessage] failed: %v", err)
 	}
 	return cm
 }
