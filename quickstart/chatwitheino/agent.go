@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -115,6 +116,9 @@ func newDeepTurnController(maxTurns int) *deep.TurnController {
 	return &deep.TurnController{
 		MaxTurns: maxTurns,
 		Decide: func(_ context.Context, result deep.TurnResult) deep.TurnDecision {
+			if shouldStopAsStandalone(result.Query, result.Turn) {
+				return deep.TurnDecision{Continue: false}
+			}
 			if result.Interrupted || result.HasError {
 				return deep.TurnDecision{Continue: false}
 			}
@@ -135,6 +139,27 @@ func hasSummary(last, acc string) bool {
 	}
 	lower := strings.ToLower(text)
 	return strings.Contains(text, "总总结") || strings.Contains(text, "最终总结") || strings.Contains(text, "总结") || strings.Contains(lower, "final summary") || strings.Contains(lower, "overall summary")
+}
+
+var standaloneCalcPattern = regexp.MustCompile(`^\s*[-+*/().\d\s]+\s*$`)
+
+func shouldStopAsStandalone(query string, turn int) bool {
+	if turn <= 0 {
+		return false
+	}
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return false
+	}
+	if standaloneCalcPattern.MatchString(q) {
+		return true
+	}
+	if len(q) <= 32 && !strings.ContainsAny(q, "\n，。！？,.!?") {
+		if !strings.Contains(q, "请按") && !strings.Contains(strings.ToLower(q), "step") {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveSkillsDir() (string, bool) {

@@ -15,6 +15,7 @@ import (
 type TurnResult struct {
 	Turn        int
 	MaxTurns    int
+	Query       string
 	LastContent string
 	Accumulated string
 	Interrupted bool
@@ -59,6 +60,7 @@ func (a *turnResumableAgent[M]) Run(ctx context.Context, input *adk.TypedAgentIn
 		if input != nil {
 			work.Messages = append(work.Messages, input.Messages...)
 		}
+		query := extractLastUserText(work.Messages)
 		acc := ""
 		for turn := 1; turn <= maxTurns; turn++ {
 			log.Printf("[deep-turn] turn=%d/%d", turn, maxTurns)
@@ -84,7 +86,7 @@ func (a *turnResumableAgent[M]) Run(ctx context.Context, input *adk.TypedAgentIn
 				}
 				acc += last
 			}
-			result := TurnResult{Turn: turn, MaxTurns: maxTurns, LastContent: last, Accumulated: acc, Interrupted: interrupted, HasError: hasErr}
+			result := TurnResult{Turn: turn, MaxTurns: maxTurns, Query: query, LastContent: last, Accumulated: acc, Interrupted: interrupted, HasError: hasErr}
 			if a.tc.OnTurn != nil {
 				a.tc.OnTurn(ctx, result)
 			}
@@ -212,6 +214,28 @@ func userMessageForType[M adk.MessageType](text string) any {
 	default:
 		return nil
 	}
+}
+
+func extractLastUserText[M adk.MessageType](messages []M) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		m := any(messages[i])
+		switch v := m.(type) {
+		case *schema.Message:
+			if v != nil && v.Role == schema.User && v.Content != "" {
+				return v.Content
+			}
+		case *schema.AgenticMessage:
+			if v == nil || v.Role != schema.AgenticRoleTypeUser {
+				continue
+			}
+			for _, b := range v.ContentBlocks {
+				if b != nil && b.UserInputText != nil && b.UserInputText.Text != "" {
+					return b.UserInputText.Text
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func turnMarkerMessage[M adk.MessageType](text string) M {

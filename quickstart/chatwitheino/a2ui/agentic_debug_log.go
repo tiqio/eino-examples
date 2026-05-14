@@ -14,7 +14,7 @@ func logAgenticStruct(msg *schema.AgenticMessage) {
 		return
 	}
 	v := strings.TrimSpace(os.Getenv("DEBUG_AGENTIC_STRUCT"))
-	if !(strings.EqualFold(v, "1") || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes")) {
+	if v != "" && !(strings.EqualFold(v, "1") || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes")) {
 		return
 	}
 	b, err := json.Marshal(msg)

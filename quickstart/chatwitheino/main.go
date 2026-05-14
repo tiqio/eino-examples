@@ -58,7 +58,10 @@ func main() {
 		callbacks.AppendGlobalHandlers(clc.NewLoopHandler(client))
 	}
 
-	useAgenticMode := strings.EqualFold(os.Getenv("USE_AGENTIC_MODE"), "true")
+	useAgenticMode := true
+	if v := strings.TrimSpace(os.Getenv("USE_AGENTIC_MODE")); v != "" {
+		useAgenticMode = strings.EqualFold(v, "true") || strings.EqualFold(v, "1") || strings.EqualFold(v, "yes")
+	}
 	var runner *adk.Runner
 	var agenticRunner *adk.TypedRunner[*schema.AgenticMessage]
 	if useAgenticMode {
